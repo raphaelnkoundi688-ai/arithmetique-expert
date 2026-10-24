@@ -1,0 +1,60 @@
+name: Build APK
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [ main, master ]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Récupérer le dépôt
+        uses: actions/checkout@v4
+
+      - name: Décompresser projet.zip (s'il existe)
+        run: |
+          if [ -f projet.zip ]; then
+            mkdir -p _projet
+            unzip -q -o projet.zip -d _projet
+          fi
+
+      - name: Localiser le projet Gradle
+        id: loc
+        run: |
+          f=$(find . -name settings.gradle.kts | head -n 1)
+          if [ -z "$f" ]; then echo "settings.gradle.kts introuvable"; exit 1; fi
+          d=$(dirname "$f")
+          echo "Projet trouvé dans : $d"
+          echo "dir=$d" >> "$GITHUB_OUTPUT"
+
+      - name: JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: SDK Android
+        uses: android-actions/setup-android@v3
+
+      - name: Gradle 8.7
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Tests unitaires
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: gradle testDebugUnitTest --stacktrace
+
+      - name: Compiler l'APK debug
+        working-directory: ${{ steps.loc.outputs.dir }}
+        run: gradle assembleDebug --stacktrace
+
+      - name: Publier l'APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: arithmetique-expert-debug-apk
+          path: ${{ steps.loc.outputs.dir }}/app/build/outputs/apk/debug/*.apk
+          if-no-files-found: error
+          retention-days: 30
